@@ -703,16 +703,30 @@
 
   let files = [];
   let selectedFormat = 'original';
-  let ffmpegInstance = null;
+  
+  // YENİ EKLENEN BEKLEME (KİLİT) SİSTEMİ
+  let ffmpegInstance = new FFmpeg();
+  let ffmpegLoadPromise = null;
+  let isFfmpegLoaded = false;
 
   async function loadFFmpeg() {
-    if (ffmpegInstance) return ffmpegInstance;
-    ffmpegInstance = new FFmpeg();
+    if (isFfmpegLoaded) return ffmpegInstance;
+    
+    // Eğer yükleme zaten başladıysa, bitmesini bekle
+    if (ffmpegLoadPromise) {
+        await ffmpegLoadPromise;
+        return ffmpegInstance;
+    }
+
     ffmpegInstance.on('log', ({ message }) => console.log("FFmpeg:", message));
-    await ffmpegInstance.load({
+    
+    ffmpegLoadPromise = ffmpegInstance.load({
         coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
         wasmURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm'
     });
+    
+    await ffmpegLoadPromise;
+    isFfmpegLoaded = true;
     return ffmpegInstance;
   }
 
@@ -759,8 +773,9 @@
     const valid = newFiles.filter(f => isImage(f) || isVideo(f));
     if (!valid.length) return;
     
+    // Video eklendiğinde arka planda yüklemeyi başlat
     if (valid.some(f => isVideo(f))) {
-        loadFFmpeg().catch(err => console.error("FFmpeg yükleme hatası:", err));
+        loadFFmpeg().catch(err => console.error("FFmpeg arkaplan yükleme hatası:", err));
     }
 
     valid.forEach(f => {
@@ -839,6 +854,7 @@
             throw new Error("Tarayıcınız güvenlik izni vermiyor. Lütfen sayfayı Gizli Sekmede (Incognito) açın.");
         }
 
+        // BURASI ARTIK GÜVENLİ: Motor tam yüklenene kadar bekleyecek
         const ffmpeg = await loadFFmpeg();
         
         const safeExt = item.file.name.split('.').pop() || 'mp4';
