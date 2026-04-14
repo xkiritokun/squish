@@ -613,7 +613,7 @@
   async function loadFFmpeg() {
     if (ffmpegInstance) return ffmpegInstance;
     ffmpegInstance = new FFmpeg();
-    ffmpegInstance.on('log', ({ message }) => console.log(message));
+    ffmpegInstance.on('log', ({ message }) => console.log("FFmpeg Log:", message));
     await ffmpegInstance.load({
         coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
         wasmURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm'
@@ -658,10 +658,6 @@
     const valid = newFiles.filter(f => isImage(f) || isVideo(f));
     if (!valid.length) return;
     
-    if (valid.some(f => isVideo(f))) {
-        loadFFmpeg();
-    }
-
     valid.forEach(f => {
       if (files.find(x => x.file.name === f.name && x.file.size === f.size)) return;
       const id = Date.now() + Math.random();
@@ -683,9 +679,7 @@
     const videoFlag = isVideo(item.file);
     
     el.innerHTML = `
-      ${videoFlag 
-        ? '<div class="file-thumb">🎥</div>' 
-        : '<img class="file-thumb" src="" alt="">'}
+      ${videoFlag ? '<div class="file-thumb">🎥</div>' : '<img class="file-thumb" src="" alt="">'}
       <div class="file-info">
         <div class="file-name">${item.file.name}</div>
         <div class="file-meta">
@@ -704,7 +698,6 @@
       reader.onload = e => { el.querySelector('.file-thumb').src = e.target.result; };
       reader.readAsDataURL(item.file);
     }
-    
     fileList.appendChild(el);
   }
 
@@ -735,18 +728,33 @@
         finishCompression(item, el, progressFill, dlBtn, compressed);
 
       } else if (isVideo(item.file)) {
+        // GÜVENLİK KONTROLÜ
+        if (typeof SharedArrayBuffer === 'undefined') {
+            alert("⚠️ Sistem Hatası: Tarayıcınız güvenlik sebebiyle video motoruna izin vermiyor. Vercel.json ayarları henüz aktif olmamış olabilir. Lütfen sayfayı GİZLİ SEKMEYİ (Incognito) açıp deneyin.");
+            throw new Error("SharedArrayBuffer aktif değil.");
+        }
+
         const ffmpeg = await loadFFmpeg();
         const { name } = item.file;
+        
+        // Videoyu motorun içine yaz
         await ffmpeg.writeFile(name, await fetchFile(item.file));
 
         const sliderVal = parseInt(qualitySlider.value);
         const crf = Math.round(51 - (sliderVal / 100) * 51); 
 
         ffmpeg.on('progress', ({ progress }) => {
-          progressFill.style.width = (progress * 100) + '%';
+          // İlerleme yüzdesini 10 ile 100 arasında göster
+          progressFill.style.width = (10 + (progress * 90)) + '%';
         });
 
-        await ffmpeg.exec(['-i', name, '-vcodec', 'libx264', '-crf', crf.toString(), '-preset', 'veryfast', 'output.mp4']);
+        // DAHA GÜVENLİ VİDEO KOMUTU (Sesi de garanti dönüştürür)
+        const execResult = await ffmpeg.exec(['-i', name, '-vcodec', 'libx264', '-acodec', 'aac', '-crf', crf.toString(), '-preset', 'ultrafast', 'output.mp4']);
+        
+        if (execResult !== 0 && execResult.code !== 0) {
+            alert("⚠️ Video sıkıştırılırken bir hata oluştu. Video formatı desteklenmiyor veya çok büyük olabilir.");
+            throw new Error("FFmpeg exec failed");
+        }
 
         const data = await ffmpeg.readFile('output.mp4');
         const compressedBlob = new Blob([data.buffer], { type: 'video/mp4' });
