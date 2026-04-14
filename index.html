@@ -25,6 +25,10 @@
   .subtitle { font-size: 16px; color: var(--muted); font-weight: 300; max-width: 460px; }
   .badges { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 4px; }
   .badge { font-size: 12px; color: var(--muted); border: 1px solid var(--border); padding: 4px 12px; border-radius: 99px; }
+  
+  /* YENİ EKLENEN UYARI TASARIMI */
+  .warning-banner { background: rgba(255, 152, 0, 0.08); border: 1px solid rgba(255, 152, 0, 0.2); color: #ffb74d; padding: 12px 20px; border-radius: var(--radius); margin-bottom: 24px; text-align: center; font-size: 14px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  
   .drop-zone { border: 2px dashed var(--border); border-radius: var(--radius); padding: 64px 32px; text-align: center; cursor: pointer; transition: border-color 0.2s, background 0.2s; background: var(--surface); position: relative; overflow: hidden; }
   .drop-zone:hover, .drop-zone.drag-over { border-color: var(--accent); background: #1a1f0a; }
   .drop-zone.drag-over::after { content: ''; position: absolute; inset: 0; background: rgba(200, 240, 60, 0.04); }
@@ -104,6 +108,10 @@
       <span class="badge">Private</span>
     </div>
   </header>
+
+  <div class="warning-banner">
+    <span>⚠️</span> Note: Max 50MB for videos to prevent browser crashes.
+  </div>
 
   <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
     <div class="drop-icon">📁</div>
@@ -208,7 +216,6 @@
 </footer>
 
 <script>
-  // FFmpeg v0.11.6 Kurulumu
   const { createFFmpeg, fetchFile } = FFmpeg;
   
   const ffmpeg = createFFmpeg({ 
@@ -271,7 +278,6 @@
     const valid = newFiles.filter(f => isImage(f) || isVideo(f));
     if (!valid.length) return;
     
-    // Video eklendiğinde arka planda motoru yükle (Eğer yüklenmemişse)
     if (valid.some(f => isVideo(f)) && !ffmpeg.isLoaded()) {
         ffmpeg.load().catch(err => console.log("Arkaplan yükleme hatası", err));
     }
@@ -348,20 +354,17 @@
 
       } else if (isVideo(item.file)) {
 
-        // 50 MB GÜVENLİK SINIRI
         const MAX_VIDEO_SIZE = 50 * 1024 * 1024;
         if (item.file.size > MAX_VIDEO_SIZE) {
             throw new Error("Sistem sağlığı için en fazla 50 MB büyüklüğünde videolar desteklenmektedir.");
         }
 
-        // Motor yüklenmemişse bekle
         if (!ffmpeg.isLoaded()) {
             await ffmpeg.load();
         }
         
         const safeInputName = 'input_video.mp4';
         
-        // Dosyayı motorun içine yaz (v0.11 mantığı)
         ffmpeg.FS('writeFile', safeInputName, await fetchFile(item.file));
 
         const sliderVal = parseInt(qualitySlider.value);
@@ -374,10 +377,8 @@
           progressFill.style.width = pct + '%';
         });
 
-        // Videoyu sıkıştır
         await ffmpeg.run('-i', safeInputName, '-vcodec', 'libx264', '-crf', crf.toString(), '-preset', 'ultrafast', 'output.mp4');
 
-        // Çıktıyı oku
         const data = ffmpeg.FS('readFile', 'output.mp4');
         const compressedBlob = new Blob([data.buffer], { type: 'video/mp4' });
         
