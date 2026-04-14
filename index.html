@@ -10,8 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/browser-image-compression/2.0.2/browser-image-compression.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
+<script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
 
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -209,8 +208,13 @@
 </footer>
 
 <script>
-  const { FFmpeg } = FFmpegWASM;
-  const { fetchFile } = FFmpegUtil;
+  // FFmpeg v0.11.6 Kurulumu
+  const { createFFmpeg, fetchFile } = FFmpeg;
+  
+  const ffmpeg = createFFmpeg({ 
+      log: true,
+      corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js'
+  });
 
   const dropZone = document.getElementById('drop-zone');
   const fileInput = document.getElementById('file-input');
@@ -223,39 +227,6 @@
 
   let files = [];
   let selectedFormat = 'original';
-  let ffmpegInstance = new FFmpeg();
-  let ffmpegLoadPromise = null;
-  let isFfmpegLoaded = false;
-
-  async function loadFFmpeg() {
-    if (isFfmpegLoaded) return ffmpegInstance;
-    
-    if (ffmpegLoadPromise) {
-        await ffmpegLoadPromise;
-        return ffmpegInstance;
-    }
-
-    ffmpegInstance.on('log', ({ message }) => console.log("FFmpeg:", message));
-    
-    const coreURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js';
-    const wasmURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm';
-    const workerChunkURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/umd/814.ffmpeg.js';
-
-    // SİHİRLİ DOKUNUŞ: Worker'ı doğrudan kendi sitemizden çağırıp yabancı dosyayı içine yediriyoruz.
-    // Bu sayede "Failed to construct Worker" (CORS) engeli tamamen aşılıyor!
-    const workerBlob = new Blob([`importScripts("${workerChunkURL}");`], { type: 'text/javascript' });
-    const classWorkerURL = URL.createObjectURL(workerBlob);
-
-    ffmpegLoadPromise = ffmpegInstance.load({
-        coreURL: coreURL,
-        wasmURL: wasmURL,
-        classWorkerURL: classWorkerURL
-    });
-    
-    await ffmpegLoadPromise;
-    isFfmpegLoaded = true;
-    return ffmpegInstance;
-  }
 
   function isVideo(file) {
     if (file.type && file.type.startsWith('video/')) return true;
@@ -300,8 +271,9 @@
     const valid = newFiles.filter(f => isImage(f) || isVideo(f));
     if (!valid.length) return;
     
-    if (valid.some(f => isVideo(f))) {
-        loadFFmpeg().catch(err => console.error("FFmpeg arkaplan yükleme hatası:", err));
+    // Video eklendiğinde arka planda motoru yükle (Eğer yüklenmemişse)
+    if (valid.some(f => isVideo(f)) && !ffmpeg.isLoaded()) {
+        ffmpeg.load().catch(err => console.log("Arkaplan yükleme hatası", err));
     }
 
     valid.forEach(f => {
@@ -379,39 +351,34 @@
         // 50 MB GÜVENLİK SINIRI
         const MAX_VIDEO_SIZE = 50 * 1024 * 1024;
         if (item.file.size > MAX_VIDEO_SIZE) {
-            throw new Error("Tarayıcı çökmelerini engellemek için sadece 50 MB altındaki videolar desteklenmektedir.");
+            throw new Error("Sistem sağlığı için en fazla 50 MB büyüklüğünde videolar desteklenmektedir.");
         }
 
-        const ffmpeg = await loadFFmpeg();
+        // Motor yüklenmemişse bekle
+        if (!ffmpeg.isLoaded()) {
+            await ffmpeg.load();
+        }
         
-        const safeExt = item.file.name.split('.').pop() || 'mp4';
-        const safeInputName = 'input_video_safe.' + safeExt;
+        const safeInputName = 'input_video.mp4';
         
-        await ffmpeg.writeFile(safeInputName, await fetchFile(item.file));
+        // Dosyayı motorun içine yaz (v0.11 mantığı)
+        ffmpeg.FS('writeFile', safeInputName, await fetchFile(item.file));
 
         const sliderVal = parseInt(qualitySlider.value);
         const crf = Math.round(51 - (sliderVal / 100) * 51); 
 
-        ffmpeg.on('progress', ({ progress }) => {
-          let pct = Math.round(progress * 100);
+        ffmpeg.setProgress(({ ratio }) => {
+          let pct = Math.round(ratio * 100);
           if(pct < 10) pct = 10;
           if(pct > 100) pct = 100;
           progressFill.style.width = pct + '%';
         });
 
-        const execResult = await ffmpeg.exec([
-            '-i', safeInputName, 
-            '-vcodec', 'libx264', 
-            '-crf', crf.toString(), 
-            '-preset', 'veryfast', 
-            'output.mp4'
-        ]);
+        // Videoyu sıkıştır
+        await ffmpeg.run('-i', safeInputName, '-vcodec', 'libx264', '-crf', crf.toString(), '-preset', 'ultrafast', 'output.mp4');
 
-        if (execResult !== 0 && execResult.code !== 0) {
-            throw new Error("Video formatı işlenemedi veya çok büyük.");
-        }
-
-        const data = await ffmpeg.readFile('output.mp4');
+        // Çıktıyı oku
+        const data = ffmpeg.FS('readFile', 'output.mp4');
         const compressedBlob = new Blob([data.buffer], { type: 'video/mp4' });
         
         finishCompression(item, el, progressFill, dlBtn, compressedBlob);
@@ -421,12 +388,7 @@
       item.status = 'error';
       el.classList.add('error');
       progressBar.classList.add('hidden');
-      
-      let errorMsg = err.message || err;
-      if (errorMsg === "undefined" || !errorMsg) {
-          errorMsg = "Tarayıcı belleği yetersiz kaldı! İşlem yarıda kesildi.";
-      }
-      alert("⚠️ İşlem Hatası: " + errorMsg);
+      alert("⚠️ İşlem Hatası: Tarayıcınız işlemi engelledi veya hafıza yetersiz kaldı.");
     }
   }
 
