@@ -8,6 +8,7 @@
 <meta name="keywords" content="video compressor, image compressor, compress mp4, reduce video size, reduce image size, free optimizer">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/browser-image-compression/2.0.2/browser-image-compression.min.js"></script>
 <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js"></script>
 <script src="https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
@@ -167,6 +168,7 @@
     border: none;
     cursor: pointer;
     transition: background 0.15s, transform 0.1s;
+    pointer-events: none; /* Tıklamayı ana kutuya devretmek için */
   }
 
   .btn-upload:hover { background: var(--accent-dim); }
@@ -186,18 +188,9 @@
     flex-wrap: wrap;
   }
 
-  .settings-bar label {
-    font-size: 13px;
-    color: var(--muted);
-    white-space: nowrap;
-  }
+  .settings-bar label { font-size: 13px; color: var(--muted); white-space: nowrap; }
 
-  .quality-group {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex: 1;
-  }
+  .quality-group { display: flex; align-items: center; gap: 10px; flex: 1; }
 
   .quality-slider {
     flex: 1;
@@ -404,6 +397,75 @@
 
   .stat-label { font-size: 12px; color: var(--muted); margin-top: 4px; display: block; }
 
+  /* Geri Eklenen SEO ve Açıklama Stilleri */
+  .seo-section {
+    margin: 64px 0 40px;
+    border-top: 1px solid var(--border);
+    padding-top: 48px;
+  }
+
+  .seo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin: 32px 0;
+  }
+
+  .seo-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+
+  .seo-card h3 {
+    font-family: 'Syne', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    color: var(--accent);
+  }
+
+  .seo-card p { font-size: 13px; color: var(--muted); line-height: 1.6; }
+
+  .seo-section h2 {
+    font-family: 'Syne', sans-serif;
+    font-size: 28px;
+    font-weight: 800;
+    margin-bottom: 12px;
+  }
+
+  .seo-section > p { font-size: 15px; color: var(--muted); max-width: 600px; line-height: 1.7; }
+
+  .faq { margin-top: 48px; }
+
+  .faq h2 {
+    font-family: 'Syne', sans-serif;
+    font-size: 28px;
+    font-weight: 800;
+    margin-bottom: 24px;
+  }
+
+  .faq-item { border-bottom: 1px solid var(--border); padding: 20px 0; }
+
+  .faq-item h3 {
+    font-family: 'Syne', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .faq-item p { font-size: 14px; color: var(--muted); line-height: 1.6; }
+
+  footer {
+    text-align: center;
+    padding: 60px 0 40px;
+    font-size: 13px;
+    color: var(--muted);
+    border-top: 1px solid var(--border);
+    margin-top: 48px;
+  }
+
   .hidden { display: none !important; }
 
   @media (max-width: 560px) {
@@ -430,11 +492,11 @@
     </div>
   </header>
 
-  <div class="drop-zone" id="drop-zone">
+  <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
     <div class="drop-icon">📁</div>
     <h2>Drop images & videos here</h2>
     <p>or click to browse — multiple files supported</p>
-    <button class="btn-upload" onclick="document.getElementById('file-input').click()">Choose Files</button>
+    <button class="btn-upload">Choose Files</button>
     <input type="file" id="file-input" accept="image/png,image/jpeg,image/webp,video/mp4,video/webm,video/quicktime" multiple>
   </div>
 
@@ -475,239 +537,14 @@
       <span class="stat-label">Avg. reduction</span>
     </div>
   </div>
-</div>
 
-<script>
-  const { FFmpeg } = FFmpegWASM;
-  const { fetchFile } = FFmpegUtil;
+  <div class="seo-section">
+    <h2>The fastest free image & video compressor online</h2>
+    <p>Squish reduces the file size of your PNG, JPG, WebP images and MP4 videos without sacrificing noticeable quality. Perfect for web developers, designers, gamers, and anyone who needs smaller files fast.</p>
 
-  const dropZone = document.getElementById('drop-zone');
-  const fileInput = document.getElementById('file-input');
-  const fileList = document.getElementById('file-list');
-  const settingsBar = document.getElementById('settings-bar');
-  const actionsEl = document.getElementById('actions');
-  const statsBar = document.getElementById('stats-bar');
-  const qualitySlider = document.getElementById('quality-slider');
-  const qualityVal = document.getElementById('quality-val');
-
-  let files = [];
-  let selectedFormat = 'original';
-  let ffmpegInstance = null;
-
-  // FFmpeg yükleme fonksiyonu
-  async function loadFFmpeg() {
-    if (ffmpegInstance) return ffmpegInstance;
-    ffmpegInstance = new FFmpeg();
-    ffmpegInstance.on('log', ({ message }) => console.log(message));
-    await ffmpegInstance.load({
-        coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
-        wasmURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm'
-    });
-    return ffmpegInstance;
-  }
-
-  qualitySlider.addEventListener('input', () => {
-    qualityVal.textContent = qualitySlider.value + '%';
-  });
-
-  document.querySelectorAll('.fmt-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.fmt-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      selectedFormat = btn.dataset.fmt;
-    });
-  });
-
-  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
-  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-  dropZone.addEventListener('drop', e => {
-    e.preventDefault();
-    dropZone.classList.remove('drag-over');
-    addFiles([...e.dataTransfer.files]);
-  });
-  fileInput.addEventListener('change', () => addFiles([...fileInput.files]));
-
-  function addFiles(newFiles) {
-    const valid = newFiles.filter(f => f.type.startsWith('image/') || f.type.startsWith('video/'));
-    if (!valid.length) return;
-    
-    // Eğer eklenen dosyalardan biri video ise arka planda FFmpeg'i önceden yüklemeye başla
-    if (valid.some(f => f.type.startsWith('video/'))) {
-        loadFFmpeg();
-    }
-
-    valid.forEach(f => {
-      if (files.find(x => x.file.name === f.name && x.file.size === f.size)) return;
-      const id = Date.now() + Math.random();
-      files.push({ id, file: f, status: 'pending', compressed: null, originalSize: f.size });
-      renderFile(files[files.length - 1]);
-    });
-    settingsBar.style.display = 'flex';
-    actionsEl.classList.remove('hidden');
-    statsBar.classList.remove('hidden');
-    updateStats();
-    fileInput.value = '';
-  }
-
-  function renderFile(item) {
-    const el = document.createElement('div');
-    el.className = 'file-item';
-    el.id = 'item-' + item.id;
-    
-    const isVideo = item.file.type.startsWith('video/');
-    
-    el.innerHTML = `
-      ${isVideo 
-        ? '<div class="file-thumb">🎥</div>' 
-        : '<img class="file-thumb" src="" alt="">'}
-      <div class="file-info">
-        <div class="file-name">${item.file.name}</div>
-        <div class="file-meta">
-          <span class="orig-size">${formatSize(item.file.size)}</span>
-          <span class="size-arrow hidden">→</span>
-          <span class="new-size hidden"></span>
-          <span class="saving-pill hidden"></span>
-        </div>
-        <div class="progress-bar hidden"><div class="progress-fill"></div></div>
+    <div class="seo-grid">
+      <div class="seo-card">
+        <h3>100% Private</h3>
+        <p>Your files never leave your device. All compression happens locally in your browser — no server uploads, ever.</p>
       </div>
-      <button class="btn-dl" onclick="downloadFile('${item.id}')" disabled>Download</button>
-    `;
-    
-    if (!isVideo) {
-      const reader = new FileReader();
-      reader.onload = e => { el.querySelector('.file-thumb').src = e.target.result; };
-      reader.readAsDataURL(item.file);
-    }
-    
-    fileList.appendChild(el);
-  }
-
-  async function compressFile(item) {
-    const el = document.getElementById('item-' + item.id);
-    const progressBar = el.querySelector('.progress-bar');
-    const progressFill = el.querySelector('.progress-fill');
-    const dlBtn = el.querySelector('.btn-dl');
-
-    progressBar.classList.remove('hidden');
-    progressFill.style.width = '10%';
-    dlBtn.disabled = true;
-
-    try {
-      if (item.file.type.startsWith('image/')) {
-        // GÖRSEL SIKIŞTIRMA
-        const quality = parseInt(qualitySlider.value) / 100;
-        const fmt = selectedFormat === 'original' ? item.file.type : selectedFormat;
-
-        const options = {
-          maxSizeMB: 10,
-          useWebWorker: true,
-          initialQuality: quality,
-          fileType: fmt,
-          onProgress: p => { progressFill.style.width = p + '%'; }
-        };
-
-        const compressed = await imageCompression(item.file, options);
-        finishCompression(item, el, progressFill, dlBtn, compressed);
-
-      } else if (item.file.type.startsWith('video/')) {
-        // VİDEO SIKIŞTIRMA (FFmpeg)
-        const ffmpeg = await loadFFmpeg();
-        const { name } = item.file;
-        await ffmpeg.writeFile(name, await fetchFile(item.file));
-
-        // Slider değerini video kalitesine (CRF) çevirme. 
-        // CRF 0 kayıpsız, 51 en kötü. Slider (10-95) -> CRF (45-18)
-        const sliderVal = parseInt(qualitySlider.value);
-        const crf = Math.round(51 - (sliderVal / 100) * 51); 
-
-        ffmpeg.on('progress', ({ progress }) => {
-          // FFmpeg progress 0 ile 1 arası döner
-          progressFill.style.width = (progress * 100) + '%';
-        });
-
-        // Hızlı ve kaliteli sıkıştırma ayarları
-        await ffmpeg.exec(['-i', name, '-vcodec', 'libx264', '-crf', crf.toString(), '-preset', 'veryfast', 'output.mp4']);
-
-        const data = await ffmpeg.readFile('output.mp4');
-        const compressedBlob = new Blob([data.buffer], { type: 'video/mp4' });
-        
-        finishCompression(item, el, progressFill, dlBtn, compressedBlob);
-      }
-    } catch (err) {
-      console.error(err);
-      item.status = 'error';
-      el.classList.add('error');
-      progressBar.classList.add('hidden');
-    }
-  }
-
-  function finishCompression(item, el, progressFill, dlBtn, compressedBlob) {
-      item.compressed = compressedBlob;
-      item.status = 'done';
-      item.compressedSize = compressedBlob.size;
-
-      const saving = Math.round((1 - compressedBlob.size / item.file.size) * 100);
-      el.classList.add('done');
-      el.querySelector('.size-arrow').classList.remove('hidden');
-      el.querySelector('.new-size').classList.remove('hidden');
-      el.querySelector('.new-size').textContent = formatSize(compressedBlob.size);
-      
-      const pill = el.querySelector('.saving-pill');
-      pill.classList.remove('hidden');
-      pill.textContent = saving > 0 ? '-' + saving + '%' : 'Larger';
-      
-      progressFill.style.width = '100%';
-      setTimeout(() => el.querySelector('.progress-bar').classList.add('hidden'), 600);
-      dlBtn.disabled = false;
-      
-      updateStats();
-  }
-
-  document.getElementById('btn-compress-all').addEventListener('click', async () => {
-    const pending = files.filter(f => f.status === 'pending');
-    for (const item of pending) await compressFile(item);
-  });
-
-  document.getElementById('btn-clear').addEventListener('click', () => {
-    files = [];
-    fileList.innerHTML = '';
-    settingsBar.style.display = 'none';
-    actionsEl.classList.add('hidden');
-    statsBar.classList.add('hidden');
-  });
-
-  window.downloadFile = function(id) {
-    const item = files.find(f => f.id == id);
-    if (!item || !item.compressed) return;
-    
-    let ext = item.compressed.type.split('/')[1];
-    if (ext === 'jpeg') ext = 'jpg';
-    if (!ext) ext = item.file.name.split('.').pop();
-
-    const name = item.file.name.replace(/\.[^.]+$/, '') + '_squished.' + ext;
-    const url = URL.createObjectURL(item.compressed);
-    const a = document.createElement('a');
-    a.href = url; a.download = name; a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  function formatSize(bytes) {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-  }
-
-  function updateStats() {
-    const done = files.filter(f => f.status === 'done');
-    document.getElementById('stat-count').textContent = files.length;
-    if (done.length) {
-      const saved = done.reduce((s, f) => s + (f.originalSize - f.compressedSize), 0);
-      let ratio = Math.round(done.reduce((s, f) => s + (1 - f.compressedSize / f.originalSize), 0) / done.length * 100);
-      if (ratio < 0) ratio = 0;
-      document.getElementById('stat-saved').textContent = formatSize(saved > 0 ? saved : 0);
-      document.getElementById('stat-ratio').textContent = ratio + '%';
-    }
-  }
-</script>
-</body>
-</html>
+      <div class="seo
