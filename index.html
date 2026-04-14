@@ -690,7 +690,8 @@
 
 <script>
   const { FFmpeg } = FFmpegWASM;
-  const { fetchFile } = FFmpegUtil;
+  // toBlobURL gizli silahını buraya ekledik!
+  const { fetchFile, toBlobURL } = FFmpegUtil;
 
   const dropZone = document.getElementById('drop-zone');
   const fileInput = document.getElementById('file-input');
@@ -703,8 +704,6 @@
 
   let files = [];
   let selectedFormat = 'original';
-  
-  // YENİ EKLENEN BEKLEME (KİLİT) SİSTEMİ
   let ffmpegInstance = new FFmpeg();
   let ffmpegLoadPromise = null;
   let isFfmpegLoaded = false;
@@ -712,7 +711,6 @@
   async function loadFFmpeg() {
     if (isFfmpegLoaded) return ffmpegInstance;
     
-    // Eğer yükleme zaten başladıysa, bitmesini bekle
     if (ffmpegLoadPromise) {
         await ffmpegLoadPromise;
         return ffmpegInstance;
@@ -720,9 +718,14 @@
 
     ffmpegInstance.on('log', ({ message }) => console.log("FFmpeg:", message));
     
+    const coreBase = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
+    const ffmpegBase = 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd';
+
+    // İŞTE SİHİR BURADA: Yabancı dosyaları tarayıcının içine sanki bizimmiş gibi indiriyoruz
     ffmpegLoadPromise = ffmpegInstance.load({
-        coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
-        wasmURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm'
+        coreURL: await toBlobURL(`${coreBase}/ffmpeg-core.js`, 'text/javascript'),
+        wasmURL: await toBlobURL(`${coreBase}/ffmpeg-core.wasm`, 'application/wasm'),
+        classWorkerURL: await toBlobURL(`${ffmpegBase}/814.ffmpeg.js`, 'text/javascript')
     });
     
     await ffmpegLoadPromise;
@@ -773,9 +776,8 @@
     const valid = newFiles.filter(f => isImage(f) || isVideo(f));
     if (!valid.length) return;
     
-    // Video eklendiğinde arka planda yüklemeyi başlat
     if (valid.some(f => isVideo(f))) {
-        loadFFmpeg().catch(err => console.error("FFmpeg arkaplan yükleme hatası:", err));
+        loadFFmpeg().catch(err => console.error("FFmpeg yükleme hatası:", err));
     }
 
     valid.forEach(f => {
@@ -851,10 +853,9 @@
       } else if (isVideo(item.file)) {
         
         if (typeof SharedArrayBuffer === 'undefined') {
-            throw new Error("Tarayıcınız güvenlik izni vermiyor. Lütfen sayfayı Gizli Sekmede (Incognito) açın.");
+            throw new Error("Tarayıcı güvenlik engeli. Lütfen sayfayı Gizli Sekmede deneyin.");
         }
 
-        // BURASI ARTIK GÜVENLİ: Motor tam yüklenene kadar bekleyecek
         const ffmpeg = await loadFFmpeg();
         
         const safeExt = item.file.name.split('.').pop() || 'mp4';
@@ -881,7 +882,7 @@
         ]);
 
         if (execResult !== 0 && execResult.code !== 0) {
-            throw new Error("Video desteklenmiyor veya çok büyük.");
+            throw new Error("Video formatı işlenemedi.");
         }
 
         const data = await ffmpeg.readFile('output.mp4');
@@ -894,7 +895,7 @@
       item.status = 'error';
       el.classList.add('error');
       progressBar.classList.add('hidden');
-      alert("⚠️ İşlem başarısız: " + err.message);
+      alert("⚠️ Hata: " + err.message);
     }
   }
 
