@@ -594,6 +594,7 @@
 </footer>
 
 <script>
+  <script>
   const { FFmpeg } = FFmpegWASM;
   const { fetchFile } = FFmpegUtil;
 
@@ -698,6 +699,7 @@
       reader.onload = e => { el.querySelector('.file-thumb').src = e.target.result; };
       reader.readAsDataURL(item.file);
     }
+    
     fileList.appendChild(el);
   }
 
@@ -728,32 +730,41 @@
         finishCompression(item, el, progressFill, dlBtn, compressed);
 
       } else if (isVideo(item.file)) {
-        // GÜVENLİK KONTROLÜ
+        
+        // 1. GÜVENLİK KONTROLÜ
         if (typeof SharedArrayBuffer === 'undefined') {
-            alert("⚠️ Sistem Hatası: Tarayıcınız güvenlik sebebiyle video motoruna izin vermiyor. Vercel.json ayarları henüz aktif olmamış olabilir. Lütfen sayfayı GİZLİ SEKMEYİ (Incognito) açıp deneyin.");
-            throw new Error("SharedArrayBuffer aktif değil.");
+            throw new Error("Tarayıcınız güvenlik izni (SharedArrayBuffer) vermiyor. Vercel güncellenmemiş olabilir, lütfen GİZLİ SEKMEDE deneyin.");
         }
 
         const ffmpeg = await loadFFmpeg();
-        const { name } = item.file;
         
-        // Videoyu motorun içine yaz
-        await ffmpeg.writeFile(name, await fetchFile(item.file));
+        // 2. DOSYA ADI KORUMASI: Boşlukları ve Türkçe karakterleri eziyoruz!
+        const safeExt = item.file.name.split('.').pop();
+        const safeInputName = 'input_video_safe.' + safeExt;
+        
+        await ffmpeg.writeFile(safeInputName, await fetchFile(item.file));
 
         const sliderVal = parseInt(qualitySlider.value);
         const crf = Math.round(51 - (sliderVal / 100) * 51); 
 
         ffmpeg.on('progress', ({ progress }) => {
-          // İlerleme yüzdesini 10 ile 100 arasında göster
-          progressFill.style.width = (10 + (progress * 90)) + '%';
+          let pct = Math.round(progress * 100);
+          if(pct < 10) pct = 10;
+          if(pct > 100) pct = 100;
+          progressFill.style.width = pct + '%';
         });
 
-        // DAHA GÜVENLİ VİDEO KOMUTU (Sesi de garanti dönüştürür)
-        const execResult = await ffmpeg.exec(['-i', name, '-vcodec', 'libx264', '-acodec', 'aac', '-crf', crf.toString(), '-preset', 'ultrafast', 'output.mp4']);
-        
+        // 3. DAHA STABİL VİDEO KOMUTU
+        const execResult = await ffmpeg.exec([
+            '-i', safeInputName, 
+            '-vcodec', 'libx264', 
+            '-crf', crf.toString(), 
+            '-preset', 'veryfast', 
+            'output.mp4'
+        ]);
+
         if (execResult !== 0 && execResult.code !== 0) {
-            alert("⚠️ Video sıkıştırılırken bir hata oluştu. Video formatı desteklenmiyor veya çok büyük olabilir.");
-            throw new Error("FFmpeg exec failed");
+            throw new Error("Video çok büyük veya formatı desteklenmiyor.");
         }
 
         const data = await ffmpeg.readFile('output.mp4');
@@ -766,6 +777,8 @@
       item.status = 'error';
       el.classList.add('error');
       progressBar.classList.add('hidden');
+      // SESSİZ KALMAMASI İÇİN HATA BİLDİRİMİ EKLENDİ
+      alert("⚠️ İşlem Hatası: " + err.message);
     }
   }
 
@@ -836,6 +849,7 @@
       document.getElementById('stat-ratio').textContent = ratio + '%';
     }
   }
+</script>
 </script>
 </body>
 </html>
